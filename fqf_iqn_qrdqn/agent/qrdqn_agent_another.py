@@ -123,13 +123,8 @@ class QRDQNAgent(BaseAgent):
         td_errors = target_sa_quantiles - current_sa_quantiles
         assert td_errors.shape == (self.batch_size, self.N, self.N)
 
-        # quantile_huber_loss = calculate_quantile_huber_loss(
-        #     td_errors, self.tau_hats, weights, self.kappa)
+        quantile_huber_loss = calculate_quantile_huber_loss(
+            td_errors, self.tau_hats, weights, self.kappa)
 
-        # 改法1：单纯只更换loss的计算方法，这样就是单纯利用gemloss对比常规计算quantile_huber_loss的优势来使得对于q的分布可能有更好的效果
-        # Define a Sinkhorn (~Wasserstein) loss between sampled measures
-        gemloss_computation = SamplesLoss(loss="sinkhorn", p=2, blur=.05)
-        gemloss_loss = gemloss_computation(next_sa_quantiles, target_sa_quantiles)
-
-        return gemloss_loss, next_q.detach().mean().item(), \
+        return quantile_huber_loss, next_q.detach().mean().item(), \
             td_errors.detach().abs().sum(dim=1).mean(dim=1, keepdim=True)
