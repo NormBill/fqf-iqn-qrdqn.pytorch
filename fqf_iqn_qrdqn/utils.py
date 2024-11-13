@@ -5,12 +5,31 @@ import torch
 
 def update_params(optim, loss, networks, retain_graph=False,
                   grad_cliping=None):
-    optim.zero_grad()
-    loss.backward(retain_graph=retain_graph)
-    # Clip norms of gradients to stebilize training.
-    if grad_cliping:
-        for net in networks:
-            torch.nn.utils.clip_grad_norm_(net.parameters(), grad_cliping)
+    # optim.zero_grad()
+    # loss.backward(retain_graph=retain_graph)
+    # # Clip norms of gradients to stebilize training.
+    # if grad_cliping:
+    #     for net in networks:
+    #         torch.nn.utils.clip_grad_norm_(net.parameters(), grad_cliping)
+    # optim.step()
+    # 因为使用了geomloss需要跟换计算梯度的方式
+    # Compute gradients using torch.autograd.grad
+    gradients = torch.autograd.grad(loss, [p for p in networks[0].parameters()], retain_graph=retain_graph,
+                                    allow_unused=True)
+
+    # If gradient clipping is enabled, clip the gradients
+    if grad_cliping is not None:
+        for g in gradients:
+            # Apply L2 gradient clipping
+            torch.nn.utils.clip_grad_norm_(g, grad_cliping)
+
+    # Now update parameters manually
+    for param, grad in zip(networks[0].parameters(), gradients):
+        if grad is not None:
+            # Ensure the gradient is properly assigned
+            param.grad = grad  # This assigns the computed gradient to the parameter's .grad
+
+    # Now perform an optimization step
     optim.step()
 
 
@@ -39,7 +58,7 @@ def calculate_quantile_huber_loss(td_errors, taus, weights=None, kappa=1.0):
     # Calculate quantile huber loss element-wisely.
     element_wise_quantile_huber_loss = torch.abs(
         taus[..., None] - (td_errors.detach() < 0).float()
-        ) * element_wise_huber_loss / kappa
+    ) * element_wise_huber_loss / kappa
     assert element_wise_quantile_huber_loss.shape == (
         batch_size, N, N_dash)
 

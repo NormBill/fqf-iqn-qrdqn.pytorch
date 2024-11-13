@@ -7,7 +7,7 @@ from fqf_iqn_qrdqn.utils import calculate_quantile_huber_loss, disable_gradients
 from .base_agent import BaseAgent
 from geomloss import SamplesLoss
 
-class QRDQNAgent(BaseAgent):
+class NQ_RDQNAgent(BaseAgent):
 
     def __init__(self, env, test_env, log_dir, num_steps=5*(10**7),
                  batch_size=32, N=200, kappa=1.0, lr=5e-5, memory_size=10**6,
@@ -19,7 +19,7 @@ class QRDQNAgent(BaseAgent):
                  log_interval=100, eval_interval=250000, num_eval_steps=125000,
                  max_episode_steps=27000, grad_cliping=None, cuda=True,
                  seed=0):
-        super(QRDQNAgent, self).__init__(
+        super(NQ_RDQNAgent, self).__init__(
             env, test_env, log_dir, num_steps, batch_size, memory_size,
             gamma, multi_step, update_interval, target_update_interval,
             start_steps, epsilon_train, epsilon_eval, epsilon_decay_steps,
