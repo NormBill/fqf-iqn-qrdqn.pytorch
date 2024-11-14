@@ -1,12 +1,12 @@
 import torch
 from torch.optim import Adam
 
-from fqf_iqn_qrdqn.model import QRDQN
+from fqf_iqn_qrdqn.model.c51 import CatDQN
 from fqf_iqn_qrdqn.utils import calculate_quantile_huber_loss, disable_gradients, evaluate_quantile_at_action, update_params
 
 from .base_agent import BaseAgent
 from geomloss import SamplesLoss
-
+import geomloss
 class NQ_RDQNAgent(BaseAgent):
 
     def __init__(self, env, test_env, log_dir, num_steps=5*(10**7),
@@ -27,16 +27,22 @@ class NQ_RDQNAgent(BaseAgent):
             eval_interval, num_eval_steps, max_episode_steps, grad_cliping,
             cuda, seed)
 
+        # # Online network.
+        # self.online_net = QRDQN(
+        #     num_channels=env.observation_space.shape[0],
+        #     num_actions=self.num_actions, N=N, dueling_net=dueling_net,
+        #     noisy_net=noisy_net).to(self.device)
+        # # Target network.
+        # self.target_net = QRDQN(
+        #     num_channels=env.observation_space.shape[0],
+        #     num_actions=self.num_actions, N=N, dueling_net=dueling_net,
+        #     noisy_net=noisy_net).to(self.device).to(self.device)
         # Online network.
-        self.online_net = QRDQN(
-            num_channels=env.observation_space.shape[0],
-            num_actions=self.num_actions, N=N, dueling_net=dueling_net,
-            noisy_net=noisy_net).to(self.device)
+        self.online_net = CatDQN(
+            n=self.num_actions, num_channels=env.observation_space.shape[0]).to(self.device)
         # Target network.
-        self.target_net = QRDQN(
-            num_channels=env.observation_space.shape[0],
-            num_actions=self.num_actions, N=N, dueling_net=dueling_net,
-            noisy_net=noisy_net).to(self.device).to(self.device)
+        self.target_net = CatDQN(
+            n=self.num_actions, num_channels=env.observation_space.shape[0]).to(self.device).to(self.device)
 
         # Copy parameters of the learning network to the target network.
         self.update_target()
@@ -54,6 +60,7 @@ class NQ_RDQNAgent(BaseAgent):
 
         self.N = N
         self.kappa = kappa
+        self.gamma = gamma
 
     def learn(self):
         self.learning_steps += 1
@@ -89,42 +96,39 @@ class NQ_RDQNAgent(BaseAgent):
     def calculate_loss(self, states, actions, rewards, next_states, dones,
                        weights):
 
-        # Calculate quantile values of current states and actions at taus.
-        current_sa_quantiles = evaluate_quantile_at_action(
-            self.online_net(states=states),
-            actions)
-        assert current_sa_quantiles.shape == (self.batch_size, self.N, 1)
+        # Calculate target pmf of current states.
+        next_action, next_pmfs = self.target_net.get_action(torch.Tensor(next_states).to(self.device))
+        next_action = actions.cpu().numpy()
+        next_atoms = rewards + self.gamma * self.target_net.atoms * (1 - dones)
+        # projection
+        delta_z = self.target_net.atoms[1] - self.target_net.atoms[0]
+        tz = next_atoms.clamp(self.target_net.v_min, self.target_net.v_max)
 
-        with torch.no_grad():
-            # Calculate Q values of next states.
-            if self.double_q_learning:
-                # Sample the noise of online network to decorrelate between
-                # the action selection and the quantile calculation.
-                self.online_net.sample_noise()
-                next_q = self.online_net.calculate_q(states=next_states)
-            else:
-                next_q = self.target_net.calculate_q(states=next_states)
+        b = (tz - self.target_net.v_min) / delta_z
+        l = b.floor().clamp(0, self.target_net.n_atoms - 1)
+        u = b.ceil().clamp(0, self.target_net.n_atoms - 1)
+        # (l == u).float() handles the case where bj is exactly an integer
+        # example bj = 1, then the upper ceiling should be uj= 2, and lj= 1
+        d_m_l = (u + (l == u).float() - b) * next_pmfs
+        d_m_u = (b - l) * next_pmfs
+        target_pmfs = torch.zeros_like(next_pmfs)
+        for i in range(target_pmfs.size(0)):
+            target_pmfs[i].index_add_(0, l[i].long(), d_m_l[i])
+            target_pmfs[i].index_add_(0, u[i].long(), d_m_u[i])
 
-            # Calculate greedy actions.
-            next_actions = torch.argmax(next_q, dim=1, keepdim=True)
-            assert next_actions.shape == (self.batch_size, 1)
+        #Calculate old pmfs
+        _, old_pmfs = self.online_net.get_action(states, actions.flatten())
+        # C51的衡量两个分布差异的方法
+        # loss = (-(target_pmfs * old_pmfs.clamp(min=1e-5, max=1 - 1e-5).log()).sum(-1)).mean()
 
-            # Calculate quantile values of next states and actions at tau_hats.
-            next_sa_quantiles = evaluate_quantile_at_action(
-                self.target_net(states=next_states),
-                next_actions).transpose(1, 2)
-            assert next_sa_quantiles.shape == (self.batch_size, 1, self.N)
+        # 改法2：更换计算分布差异的方法的同时更换估计分布的方式，也就是使用pmf来对分布做估计
+        # 因为使用了geomloss更换了update_param的方式
+        # Define a Sinkhorn (~Wasserstein) loss between sampled measures
+        p = 1
+        entreg = .1
+        gemloss_computation = SamplesLoss(loss="sinkhorn", p=1, cost=geomloss.utils.distances, blur=entreg ** (1 / p))
+        gemloss_loss = gemloss_computation(old_pmfs.requires_grad_(),
+                                           target_pmfs.requires_grad_()).mean()
 
-            # Calculate target quantile values.
-            target_sa_quantiles = rewards[..., None] + (
-                1.0 - dones[..., None]) * self.gamma_n * next_sa_quantiles
-            assert target_sa_quantiles.shape == (self.batch_size, 1, self.N)
-
-        td_errors = target_sa_quantiles - current_sa_quantiles
-        assert td_errors.shape == (self.batch_size, self.N, self.N)
-
-        quantile_huber_loss = calculate_quantile_huber_loss(
-            td_errors, self.tau_hats, weights, self.kappa)
-
-        return quantile_huber_loss, next_q.detach().mean().item(), \
-            td_errors.detach().abs().sum(dim=1).mean(dim=1, keepdim=True)
+        return gemloss_loss, next_action.detach().mean().item(), \
+            gemloss_loss.detach().abs().sum(dim=1).mean(dim=1, keepdim=True)
