@@ -1,5 +1,6 @@
 import os
 import yaml
+import wandb
 import argparse
 from datetime import datetime
 
@@ -9,8 +10,14 @@ from fqf_iqn_qrdqn.agent import NQ_RDQNAgent
 
 
 def run(args):
+    # Initialize WandB logging
+    wandb.init(project='qrdqn', config=args, name=args.env_id, dir='logs')
+
     with open(args.config) as f:
         config = yaml.load(f, Loader=yaml.SafeLoader)
+
+    # Log the configuration to WandB
+    wandb.config.update(config)
 
     # Create environments.
     env = make_pytorch_env(args.env_id)

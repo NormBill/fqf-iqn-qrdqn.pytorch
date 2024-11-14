@@ -1,11 +1,13 @@
 import torch
 from torch.optim import Adam
+import wandb
 
 from fqf_iqn_qrdqn.model import QRDQN
 from fqf_iqn_qrdqn.utils import calculate_quantile_huber_loss, disable_gradients, evaluate_quantile_at_action, update_params
 
 from .base_agent import BaseAgent
 from geomloss import SamplesLoss
+import geomloss
 
 class QRDQNAgent(BaseAgent):
 
@@ -129,9 +131,15 @@ class QRDQNAgent(BaseAgent):
         # 改法1：单纯只更换loss的计算方法，这样就是单纯利用gemloss对比常规计算quantile_huber_loss的优势来使得对于q的分布可能有更好的效果
         # 因为使用了geomloss更换了update_param的方式
         # Define a Sinkhorn (~Wasserstein) loss between sampled measures
-        gemloss_computation = SamplesLoss(loss="sinkhorn", p=2, blur=.05)
+        p = 1
+        entreg = .1
+        gemloss_computation = SamplesLoss(loss="sinkhorn", p=1, cost=geomloss.utils.distances, blur=entreg ** (1 / p))
         gemloss_loss = gemloss_computation(next_sa_quantiles.requires_grad_(), target_sa_quantiles.requires_grad_()).mean()
         # print(gemloss_loss.shape)
+
+        wandb.log({
+            'geomloss_type1': gemloss_loss,
+        })
 
         return gemloss_loss, next_q.detach().mean().item(), \
             td_errors.detach().abs().sum(dim=1).mean(dim=1, keepdim=True)
