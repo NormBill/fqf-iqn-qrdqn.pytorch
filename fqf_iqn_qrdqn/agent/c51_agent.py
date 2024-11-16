@@ -1,5 +1,6 @@
 import torch
 from torch.optim import Adam
+import wandb
 
 from fqf_iqn_qrdqn.model.c51 import CatDQN
 from fqf_iqn_qrdqn.utils import calculate_quantile_huber_loss, disable_gradients, evaluate_quantile_at_action, update_params
@@ -64,8 +65,8 @@ class NQ_RDQNAgent(BaseAgent):
 
     def learn(self):
         self.learning_steps += 1
-        self.online_net.sample_noise()
-        self.target_net.sample_noise()
+        # self.online_net.sample_noise()
+        # self.target_net.sample_noise()
 
         if self.use_per:
             (states, actions, rewards, next_states, dones), weights =\
@@ -77,7 +78,7 @@ class NQ_RDQNAgent(BaseAgent):
 
         quantile_loss, mean_q, errors = self.calculate_loss(
             states, actions, rewards, next_states, dones, weights)
-        assert errors.shape == (self.batch_size, 1)
+        # assert errors.shape == (self.batch_size, 1)
 
         update_params(
             self.optim, quantile_loss,
@@ -130,5 +131,68 @@ class NQ_RDQNAgent(BaseAgent):
         gemloss_loss = gemloss_computation(old_pmfs.requires_grad_(),
                                            target_pmfs.requires_grad_()).mean()
 
-        return gemloss_loss, next_action.detach().mean().item(), \
-            gemloss_loss.detach().abs().sum(dim=1).mean(dim=1, keepdim=True)
+        return gemloss_loss, next_action.mean().item(), \
+            gemloss_loss.abs().sum().mean()
+
+    def exploit(self, state):
+        # Act without randomness.
+        state = torch.ByteTensor(
+            state).unsqueeze(0).to(self.device).float() / 255.
+        with torch.no_grad():
+            action, _ = self.online_net.get_action(state)
+            # print(action)
+        return action
+
+    def train_episode(self):
+        self.online_net.train()
+        self.target_net.train()
+
+        self.episodes += 1
+        episode_return = 0.
+        episode_steps = 0
+
+        done = False
+        state = self.env.reset()
+
+        while (not done) and episode_steps <= self.max_episode_steps:
+            # NOTE: Noises can be sampled only after self.learn(). However, I
+            # sample noises before every action, which seems to lead better
+            # performances.
+            # self.online_net.sample_noise()
+
+            if self.is_random(eval=False):
+                action = self.explore()
+            else:
+                action = self.exploit(state)
+
+            next_state, reward, done, _ = self.env.step(action)
+
+            # To calculate efficiently, I just set priority=max_priority here.
+            self.memory.append(state, action, reward, next_state, done)
+
+            self.steps += 1
+            episode_steps += 1
+            episode_return += reward
+            state = next_state
+
+            self.train_step_interval()
+
+        # We log running mean of stats.
+        self.train_return.append(episode_return)
+
+        # We log evaluation results along with training frames = 4 * steps.
+        if self.episodes % self.log_interval == 0:
+            self.writer.add_scalar(
+                'return/train', self.train_return.get(), 4 * self.steps)
+
+        print(f'Episode: {self.episodes:<4}  '
+              f'episode steps: {episode_steps:<4}  '
+              f'return: {episode_return:<5.1f}')
+
+        # wandb.log({
+        #     'episode': self.episodes,
+        #     'episode_steps': episode_steps,
+        #     'episode_return': episode_return,  # Immediate reward of the current episode
+        #     'training_return': self.train_return.get(),  # Running average reward
+        #     'steps': self.steps
+        # })

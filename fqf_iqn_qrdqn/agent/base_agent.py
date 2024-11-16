@@ -188,13 +188,13 @@ class BaseAgent(ABC):
               f'episode steps: {episode_steps:<4}  '
               f'return: {episode_return:<5.1f}')
 
-        wandb.log({
-            'episode': self.episodes,
-            'episode_steps': episode_steps,
-            'episode_return': episode_return,  # Immediate reward of the current episode
-            'training_return': self.train_return.get(),  # Running average reward
-            'steps': self.steps
-        })
+        # wandb.log({
+        #     'episode': self.episodes,
+        #     'episode_steps': episode_steps,
+        #     'episode_return': episode_return,  # Immediate reward of the current episode
+        #     'training_return': self.train_return.get(),  # Running average reward
+        #     'steps': self.steps
+        # })
 
     def train_step_interval(self):
         self.epsilon_train.step()

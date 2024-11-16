@@ -7,6 +7,8 @@ class CatDQN(nn.Module):
                  dueling_net=False, noisy_net=False):
         super().__init__()
         linear = NoisyLinear if noisy_net else nn.Linear
+        self.v_min = v_min
+        self.v_max = v_max
 
         # self.env = env
         self.n_atoms = n_atoms
@@ -55,11 +57,16 @@ class CatDQN(nn.Module):
     def get_action(self, x, action=None):
         # if not self.dueling_net:
         logits = self.network(x / 255.0)
+
         # probability mass function for each action
+        #TODO 严重问题：对于动作选择有严重的对于动作0的偏好
         pmfs = torch.softmax(logits.view(len(x), self.n, self.n_atoms), dim=2)
         q_values = (pmfs * self.atoms).sum(2)
+        # print("q_values:", q_values)
+
         if action is None:
             action = torch.argmax(q_values, 1)
+            # print(action)
         # else:
         #     advantage_logits = self.advantage_net(x / 255.0)
         #     baseline_logits = self.baseline_net(x / 255.0)
