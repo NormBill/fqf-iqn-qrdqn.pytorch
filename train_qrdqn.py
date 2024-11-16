@@ -31,11 +31,13 @@ def run(args):
         'logs', args.env_id, f'{name}-seed{args.seed}-{time}')
 
     # Create the agent and run.
-    if args.retain_quantiles:
+    if args.retain_quantiles.lower() == 'true':
+        print("Predict q value distribution as continuous distribution")
         agent = QRDQNAgent(
             env=env, test_env=test_env, log_dir=log_dir, seed=args.seed,
             cuda=args.cuda, **config)
     else:
+        print("Predict q value distribution as discrete distribution")
         agent = NQ_RDQNAgent(
             env=env, test_env=test_env, log_dir=log_dir, seed=args.seed,
             cuda=args.cuda, **config)
