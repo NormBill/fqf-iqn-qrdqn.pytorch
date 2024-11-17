@@ -131,9 +131,7 @@ class QRDQNAgent(BaseAgent):
         # 改法1：单纯只更换loss的计算方法，这样就是单纯利用gemloss对比常规计算quantile_huber_loss的优势来使得对于q的分布可能有更好的效果
         # 因为使用了geomloss更换了update_param的方式
         # Define a Sinkhorn (~Wasserstein) loss between sampled measures
-        p = 1
-        entreg = .1
-        gemloss_computation = SamplesLoss(loss="sinkhorn", p=1, cost=geomloss.utils.distances, blur=entreg ** (1 / p))
+        gemloss_computation = SamplesLoss(loss="sinkhorn", p=1, cost=geomloss.utils.distances, blur=0.05)
         gemloss_loss = gemloss_computation(next_sa_quantiles.requires_grad_(), target_sa_quantiles.requires_grad_()).mean()
         # print(gemloss_loss.shape)
 

@@ -3,7 +3,7 @@ import torch
 from fqf_iqn_qrdqn.network import DQNBase, NoisyLinear
 
 class CatDQN(nn.Module):
-    def __init__(self, n, num_channels, n_atoms=101, v_min=-100, v_max=100,
+    def __init__(self, n, num_channels, n_atoms=51, v_min=-10, v_max=10,
                  dueling_net=False, noisy_net=False):
         super().__init__()
         linear = NoisyLinear if noisy_net else nn.Linear
@@ -59,7 +59,6 @@ class CatDQN(nn.Module):
         logits = self.network(x / 255.0)
 
         # probability mass function for each action
-        #TODO 严重问题：对于动作选择有严重的对于动作0的偏好
         pmfs = torch.softmax(logits.view(len(x), self.n, self.n_atoms), dim=2)
         q_values = (pmfs * self.atoms).sum(2)
         # print("q_values:", q_values)

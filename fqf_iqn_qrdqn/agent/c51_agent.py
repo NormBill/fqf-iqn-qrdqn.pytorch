@@ -125,9 +125,7 @@ class NQ_RDQNAgent(BaseAgent):
         # 改法2：更换计算分布差异的方法的同时更换估计分布的方式，也就是使用pmf来对分布做估计
         # 因为使用了geomloss更换了update_param的方式
         # Define a Sinkhorn (~Wasserstein) loss between sampled measures
-        p = 1
-        entreg = .1
-        gemloss_computation = SamplesLoss(loss="sinkhorn", p=1, cost=geomloss.utils.distances, blur=entreg ** (1 / p))
+        gemloss_computation = SamplesLoss(loss="sinkhorn", p=1, cost=geomloss.utils.distances, blur=0.05)
         gemloss_loss = gemloss_computation(old_pmfs.requires_grad_(),
                                            target_pmfs.requires_grad_()).mean()
 
