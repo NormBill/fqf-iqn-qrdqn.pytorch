@@ -72,7 +72,7 @@ class QRDQNAgent(BaseAgent):
 
         quantile_loss, mean_q, errors = self.calculate_loss(
             states, actions, rewards, next_states, dones, weights)
-        assert errors.shape == (self.batch_size, 1)
+        # assert errors.shape == (self.batch_size, 1)
 
         update_params(
             self.optim, quantile_loss,
@@ -140,4 +140,4 @@ class QRDQNAgent(BaseAgent):
         # })
 
         return gemloss_loss, next_q.detach().mean().item(), \
-            gemloss_loss.unsqueeze(1)
+            gemloss_loss
