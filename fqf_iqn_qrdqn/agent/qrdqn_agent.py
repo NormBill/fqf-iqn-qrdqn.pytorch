@@ -135,9 +135,9 @@ class QRDQNAgent(BaseAgent):
         gemloss_loss = gemloss_computation(next_sa_quantiles.requires_grad_(), target_sa_quantiles.requires_grad_()).mean()
         # print(gemloss_loss.shape)
 
-        wandb.log({
-            'geomloss_type1': gemloss_loss,
-        })
+        # wandb.log({
+        #     'geomloss_type1': gemloss_loss,
+        # })
 
         return gemloss_loss, next_q.detach().mean().item(), \
             gemloss_loss.unsqueeze(1)
