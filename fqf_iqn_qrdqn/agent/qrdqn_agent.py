@@ -140,4 +140,4 @@ class QRDQNAgent(BaseAgent):
         })
 
         return gemloss_loss, next_q.detach().mean().item(), \
-            td_errors.detach().abs().sum(dim=1).mean(dim=1, keepdim=True)
+            gemloss_loss.unsqueeze(1)
